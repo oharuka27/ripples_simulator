@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#071820" />
+    <meta name="description" content="水面をタップして波の重なりを観察できる、インタラクティブな波紋シミュレータ" />
+    <title>Ripple Lab — 波紋シミュレータ</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="Ripple Lab ホーム">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span><b>RIPPLE</b><small>LABORATORY</small></span>
+        </a>
+        <div class="status" aria-live="polite"><span></span><span id="statusText">SIMULATION ACTIVE</span></div>
+      </header>
+
+      <section class="hero">
+        <div class="intro">
+          <p class="eyebrow"><span>01</span> INTERACTIVE WAVE STUDY</p>
+          <h1>波紋を、<br /><em>重ねてみる。</em></h1>
+          <p class="lead">水面をクリック、タップ、またはドラッグ。<br />複数の指で触れると、波は互いに重なり合います。</p>
+        </div>
+
+        <div class="simulator-wrap">
+          <div class="canvas-frame" id="canvasFrame">
+            <canvas id="waterCanvas" aria-label="クリックして波紋を作る水面シミュレーション"></canvas>
+            <div class="canvas-hud" aria-hidden="true">
+              <span>X <b id="xReadout">0.000</b></span>
+              <span>Y <b id="yReadout">0.000</b></span>
+              <span>ENERGY <b id="energyReadout">0.000</b></span>
+            </div>
+            <div class="corner-label" aria-hidden="true">WATER<br />SURFACE</div>
+            <div class="tap-hint" id="tapHint" aria-hidden="true"><span></span> TOUCH THE SURFACE</div>
+          </div>
+        </div>
+
+        <aside class="control-panel" aria-label="シミュレーション設定">
+          <div class="panel-heading">
+            <span class="panel-number">02</span>
+            <div><p>CONTROL PANEL</p><h2>実験条件</h2></div>
+          </div>
+
+          <fieldset>
+            <legend>BOUNDARY / 外側の境界</legend>
+            <div class="segmented" id="boundaryControl">
+              <label><input type="radio" name="boundary" value="open" checked /><span><b>OPEN</b><small>開放境界</small></span></label>
+              <label><input type="radio" name="boundary" value="reflect" /><span><b>REFLECT</b><small>反射境界</small></span></label>
+            </div>
+            <p class="control-note" id="boundaryDescription">波が外側へ抜け、静かに消えていきます。</p>
+          </fieldset>
+
+          <div class="slider-group">
+            <label for="strength"><span>WAVE STRENGTH / 波の強さ</span><output id="strengthValue">72</output></label>
+            <input id="strength" type="range" min="20" max="100" value="72" />
+          </div>
+          <div class="slider-group">
+            <label for="size"><span>SOURCE SIZE / 波源サイズ</span><output id="sizeValue">18</output></label>
+            <input id="size" type="range" min="6" max="36" value="18" />
+          </div>
+
+          <div class="actions">
+            <button type="button" id="pauseButton"><span class="pause-icon" aria-hidden="true"></span><b>一時停止</b></button>
+            <button type="button" id="clearButton"><span class="clear-icon" aria-hidden="true">↻</span><b>水面をリセット</b></button>
+          </div>
+
+          <div class="tip"><span>TIP</span><p><b>SHIFT + CLICK</b> でも複数の波源を<br />リズミカルに配置できます。</p></div>
+        </aside>
+      </section>
+
+      <footer>
+        <p>REAL-TIME 2D WAVE EQUATION</p>
+        <p>Δ²u · c² = ∂²u/∂t²</p>
+        <p>RIPPLE LAB / 2026</p>
+      </footer>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
