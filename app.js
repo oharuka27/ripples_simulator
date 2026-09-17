@@ -4,46 +4,80 @@ const ctx = canvas.getContext('2d', { alpha: false });
 const simCanvas = document.createElement('canvas');
 const simCtx = simCanvas.getContext('2d', { alpha: false });
 
-let width = 180;
-let height = 180;
+const viewSize = 180;
+const absorberWidth = 48;
+const width = viewSize + absorberWidth * 2;
+const height = width;
+const viewStart = absorberWidth;
+const viewEnd = viewStart + viewSize - 1;
 let current = new Float32Array(width * height);
 let previous = new Float32Array(width * height);
 let next = new Float32Array(width * height);
-let image = simCtx.createImageData(width, height);
+let image = simCtx.createImageData(viewSize, viewSize);
 let boundary = 'open';
 let paused = false;
 let interacted = false;
 const pointers = new Map();
+
+function conserveVisibleVolume(field) {
+  let sum = 0;
+  const count = viewSize * viewSize;
+  for (let y = viewStart; y <= viewEnd; y++) {
+    for (let x = viewStart; x <= viewEnd; x++) sum += field[y * width + x];
+  }
+  const mean = sum / count;
+  if (Math.abs(mean) < 1e-12) return;
+  for (let y = viewStart; y <= viewEnd; y++) {
+    for (let x = viewStart; x <= viewEnd; x++) field[y * width + x] -= mean;
+  }
+}
 
 function resize() {
   const rect = frame.getBoundingClientRect();
   const dpr = Math.min(devicePixelRatio || 1, 2);
   canvas.width = Math.round(rect.width * dpr);
   canvas.height = Math.round(rect.height * dpr);
-  simCanvas.width = width;
-  simCanvas.height = height;
+  simCanvas.width = viewSize;
+  simCanvas.height = viewSize;
   ctx.imageSmoothingEnabled = true;
 }
 
 function disturb(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const x = Math.round((clientX - rect.left) / rect.width * (width - 1));
-  const y = Math.round((clientY - rect.top) / rect.height * (height - 1));
-  const radius = Number(document.querySelector('#size').value) * width / 600;
+  const normalizedX = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  const normalizedY = Math.max(0, Math.min(1, (clientY - rect.top) / rect.height));
+  // Pixel centres are at n + 0.5. Keeping the source position fractional
+  // avoids round() consistently selecting the lower-right of the four cells.
+  const localX = normalizedX * viewSize - .5;
+  const localY = normalizedY * viewSize - .5;
+  const x = localX + viewStart;
+  const y = localY + viewStart;
+  const radius = Number(document.querySelector('#size').value) * viewSize / 600;
   const strength = Number(document.querySelector('#strength').value) / 100;
   const reach = Math.ceil(radius * 2.5);
-  for (let dy = -reach; dy <= reach; dy++) {
-    for (let dx = -reach; dx <= reach; dx++) {
-      const px = x + dx, py = y + dy;
-      if (px < 1 || px >= width - 1 || py < 1 || py >= height - 1) continue;
+  const minX = Math.max(viewStart + 1, Math.floor(x - reach));
+  const maxX = Math.min(viewEnd - 1, Math.ceil(x + reach));
+  const minY = Math.max(viewStart + 1, Math.floor(y - reach));
+  const maxY = Math.min(viewEnd - 1, Math.ceil(y + reach));
+  for (let py = minY; py <= maxY; py++) {
+    for (let px = minX; px <= maxX; px++) {
+      const dx = px - x;
+      const dy = py - y;
       const d2 = dx * dx + dy * dy;
-      const impulse = Math.exp(-d2 / (2 * radius * radius)) * strength;
+      // A Ricker-like source has nearly zero net displacement. A positive-only
+      // Gaussian would keep raising the mean water level in a closed basin.
+      const normalized = d2 / (2 * radius * radius);
+      const impulse = (1 - normalized) * Math.exp(-normalized) * strength;
       current[py * width + px] += impulse;
       previous[py * width + px] -= impulse * .18;
     }
   }
-  document.querySelector('#xReadout').textContent = (x / width).toFixed(3);
-  document.querySelector('#yReadout').textContent = (y / height).toFixed(3);
+  // Enforce the discrete volume invariant exactly. Truncating the source near
+  // an edge otherwise leaves a small DC component after every interaction.
+  conserveVisibleVolume(current);
+  conserveVisibleVolume(previous);
+  document.querySelector('#xReadout').textContent = normalizedX.toFixed(3);
+  document.querySelector('#yReadout').textContent = normalizedY.toFixed(3);
   if (!interacted) {
     interacted = true;
     document.querySelector('#tapHint').style.opacity = '0';
@@ -51,27 +85,67 @@ function disturb(clientX, clientY) {
 }
 
 function step() {
-  const damping = boundary === 'open' ? 0.994 : 0.998;
+  const waveCoefficient = .22;
+  const courant = Math.sqrt(waveCoefficient);
+  const radiationCoefficient = (courant - 1) / (courant + 1);
   let energy = 0;
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const i = y * width + x;
-      const laplacian = current[i - 1] + current[i + 1] + current[i - width] + current[i + width] - 4 * current[i];
-      let localDamping = damping;
-      if (boundary === 'open') {
-        const edge = Math.min(x, y, width - 1 - x, height - 1 - y);
-        if (edge < 18) localDamping *= 0.82 + edge * .01;
-      }
-      next[i] = (2 * current[i] - previous[i] + .22 * laplacian) * localDamping;
-      energy += Math.abs(next[i]);
-    }
-  }
+
   if (boundary === 'reflect') {
-    for (let x = 1; x < width - 1; x++) { next[x] = next[width + x]; next[(height - 1) * width + x] = next[(height - 2) * width + x]; }
-    for (let y = 1; y < height - 1; y++) { next[y * width] = next[y * width + 1]; next[y * width + width - 1] = next[y * width + width - 2]; }
+    // Zero normal flux at the wall. A missing neighbour equals the boundary
+    // cell itself, keeping the discrete Laplacian symmetric and non-amplifying.
+    const wallLoss = .0015;
+    for (let y = viewStart; y <= viewEnd; y++) {
+      for (let x = viewStart; x <= viewEnd; x++) {
+        const i = y * width + x;
+        const left = x === viewStart ? i : i - 1;
+        const right = x === viewEnd ? i : i + 1;
+        const up = y === viewStart ? i : i - width;
+        const down = y === viewEnd ? i : i + width;
+        const laplacian = current[left] + current[right] + current[up] + current[down] - 4 * current[i];
+        const value = (2 * current[i] - (1 - wallLoss) * previous[i] + waveCoefficient * laplacian) / (1 + wallLoss);
+        next[i] = Number.isFinite(value) && Math.abs(value) < 20 ? value : 0;
+        energy += Math.abs(next[i]);
+      }
+    }
+    // Remove floating-point drift in the zero-frequency mode on every step.
+    // This guarantees sum(height) stays constant through any number of bounces.
+    conserveVisibleVolume(next);
   } else {
-    for (let x = 0; x < width; x++) { next[x] = 0; next[(height - 1) * width + x] = 0; }
-    for (let y = 0; y < height; y++) { next[y * width] = 0; next[y * width + width - 1] = 0; }
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const i = y * width + x;
+        const laplacian = current[i - 1] + current[i + 1] + current[i - width] + current[i + width] - 4 * current[i];
+        // The absorber lies completely outside the visible water surface.
+        // A cubic ramp avoids an impedance jump where the sponge begins.
+        const outside = Math.max(viewStart - x, x - viewEnd, viewStart - y, y - viewEnd, 0);
+        const depth = outside / absorberWidth;
+        const sigma = .42 * depth * depth * depth;
+        // Discretisation of u_tt + 2*sigma*u_t = c^2*Laplacian(u).
+        // Damping velocity rather than displacement reduces sponge reflections.
+        const value = (2 * current[i] - (1 - sigma) * previous[i] + waveCoefficient * laplacian) / (1 + sigma);
+        next[i] = Number.isFinite(value) && Math.abs(value) < 20 ? value : 0;
+        if (x >= viewStart && x <= viewEnd && y >= viewStart && y <= viewEnd) energy += Math.abs(next[i]);
+      }
+    }
+    // Sommerfeld radiation condition in its first-order discrete (Mur) form.
+    // The remaining outer-edge error has already crossed the 48-cell sponge.
+    for (let x = 1; x < width - 1; x++) {
+      next[x] = current[width + x] + radiationCoefficient * (next[width + x] - current[x]);
+      const bottom = (height - 1) * width + x;
+      next[bottom] = current[bottom - width] + radiationCoefficient * (next[bottom - width] - current[bottom]);
+    }
+    for (let y = 1; y < height - 1; y++) {
+      const left = y * width;
+      const right = left + width - 1;
+      next[left] = current[left + 1] + radiationCoefficient * (next[left + 1] - current[left]);
+      next[right] = current[right - 1] + radiationCoefficient * (next[right - 1] - current[right]);
+    }
+    next[0] = (next[1] + next[width]) * .5;
+    next[width - 1] = (next[width - 2] + next[2 * width - 1]) * .5;
+    const bottomLeft = (height - 1) * width;
+    const bottomRight = height * width - 1;
+    next[bottomLeft] = (next[bottomLeft + 1] + next[bottomLeft - width]) * .5;
+    next[bottomRight] = (next[bottomRight - 1] + next[bottomRight - width]) * .5;
   }
   [previous, current, next] = [current, next, previous];
   document.querySelector('#energyReadout').textContent = Math.min(9.999, energy / 500).toFixed(3);
@@ -79,19 +153,27 @@ function step() {
 
 function render() {
   const data = image.data;
-  for (let i = 0; i < current.length; i++) {
-    const x = i % width;
-    const y = Math.floor(i / width);
-    const h = current[i];
-    const dx = current[i + (x < width - 1 ? 1 : 0)] - current[i - (x > 0 ? 1 : 0)];
-    const dy = current[i + (y < height - 1 ? width : 0)] - current[i - (y > 0 ? width : 0)];
-    const light = Math.max(-1, Math.min(1, (-dx * .7 - dy * .5) * 3.2));
-    const caustic = Math.max(0, Math.abs(h) - .04) * 25;
-    const noise = Math.sin(x * .41 + y * .17) * 1.2;
-    data[i * 4] = 7 + light * 14 + caustic * 10 + noise;
-    data[i * 4 + 1] = 37 + light * 35 + caustic * 17 + noise;
-    data[i * 4 + 2] = 46 + light * 42 + caustic * 18 + noise;
-    data[i * 4 + 3] = 255;
+  for (let localY = 0; localY < viewSize; localY++) {
+    for (let localX = 0; localX < viewSize; localX++) {
+      const x = localX + viewStart;
+      const y = localY + viewStart;
+      const i = y * width + x;
+      const pixel = (localY * viewSize + localX) * 4;
+      const h = current[i];
+      const dx = current[i + 1] - current[i - 1];
+      const dy = current[i + width] - current[i - width];
+      const laplacian = current[i - 1] + current[i + 1] + current[i - width] + current[i + width] - 4 * h;
+      // Isotropic shading keeps a circular wave visually concentric. A fixed
+      // directional light made one quadrant brighter and shifted the apparent centre.
+      const light = Math.max(-1, Math.min(1, -laplacian * 2.8));
+      const slope = Math.hypot(dx, dy);
+      const caustic = Math.max(0, Math.abs(h) - .04) * 20 + slope * 7;
+      const noise = Math.sin(x * .41 + y * .17) * 1.2;
+      data[pixel] = 7 + light * 14 + caustic * 10 + noise;
+      data[pixel + 1] = 37 + light * 35 + caustic * 17 + noise;
+      data[pixel + 2] = 46 + light * 42 + caustic * 18 + noise;
+      data[pixel + 3] = 255;
+    }
   }
   simCtx.putImageData(image, 0, 0);
   ctx.drawImage(simCanvas, 0, 0, canvas.width, canvas.height);
@@ -127,6 +209,21 @@ frame.addEventListener('pointercancel', release);
 
 document.querySelectorAll('input[name="boundary"]').forEach(input => input.addEventListener('change', (event) => {
   boundary = event.target.value;
+  // Do not let waves retained in the hidden absorber return after toggling.
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (x >= viewStart && x <= viewEnd && y >= viewStart && y <= viewEnd) continue;
+      const i = y * width + x;
+      current[i] = 0; previous[i] = 0; next[i] = 0;
+    }
+  }
+  if (boundary === 'reflect') {
+    // OPEN may leave a tiny DC offset. Removing it conserves the closed
+    // basin's volume and prevents that offset accumulating after the switch.
+    conserveVisibleVolume(current);
+    conserveVisibleVolume(previous);
+    conserveVisibleVolume(next);
+  }
   document.querySelector('#boundaryDescription').textContent = boundary === 'open' ? '波が外側へ抜け、静かに消えていきます。' : '波が壁で跳ね返り、干渉を繰り返します。';
 }));
 
