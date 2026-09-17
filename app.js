@@ -18,6 +18,7 @@ let boundary = 'open';
 let paused = false;
 let interacted = false;
 const pointers = new Map();
+const shiftRepeatInterval = 180;
 const wavePresets = [
   { strength: 20, size: 4 },
   { strength: 30, size: 6 },
@@ -202,20 +203,52 @@ function animate(time) {
 
 frame.addEventListener('pointerdown', (event) => {
   frame.setPointerCapture(event.pointerId);
-  pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+  const pointer = {
+    x: event.clientX,
+    y: event.clientY,
+    lastDisturbX: event.clientX,
+    lastDisturbY: event.clientY,
+    repeatTimer: null,
+  };
+  pointers.set(event.pointerId, pointer);
   disturb(event.clientX, event.clientY);
+  if (event.shiftKey) {
+    pointer.repeatTimer = window.setInterval(() => {
+      if (!pointers.has(event.pointerId)) return;
+      disturb(pointer.x, pointer.y);
+    }, shiftRepeatInterval);
+  }
 });
 frame.addEventListener('pointermove', (event) => {
   if (!pointers.has(event.pointerId)) return;
-  const last = pointers.get(event.pointerId);
-  if (Math.hypot(event.clientX - last.x, event.clientY - last.y) > 12) {
+  const pointer = pointers.get(event.pointerId);
+  pointer.x = event.clientX;
+  pointer.y = event.clientY;
+  if (Math.hypot(event.clientX - pointer.lastDisturbX, event.clientY - pointer.lastDisturbY) > 12) {
     disturb(event.clientX, event.clientY);
-    pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    pointer.lastDisturbX = event.clientX;
+    pointer.lastDisturbY = event.clientY;
   }
 });
-function release(event) { pointers.delete(event.pointerId); }
+function release(event) {
+  const pointer = pointers.get(event.pointerId);
+  if (pointer && pointer.repeatTimer !== null) window.clearInterval(pointer.repeatTimer);
+  pointers.delete(event.pointerId);
+}
+function stopShiftRepeats() {
+  pointers.forEach(pointer => {
+    if (pointer.repeatTimer === null) return;
+    window.clearInterval(pointer.repeatTimer);
+    pointer.repeatTimer = null;
+  });
+}
 frame.addEventListener('pointerup', release);
 frame.addEventListener('pointercancel', release);
+frame.addEventListener('lostpointercapture', release);
+window.addEventListener('keyup', (event) => {
+  if (event.key === 'Shift') stopShiftRepeats();
+});
+window.addEventListener('blur', stopShiftRepeats);
 
 document.querySelectorAll('input[name="boundary"]').forEach(input => input.addEventListener('change', (event) => {
   boundary = event.target.value;
