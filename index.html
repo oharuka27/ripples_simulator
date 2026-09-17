@@ -53,13 +53,11 @@
             <p class="control-note" id="boundaryDescription">波が外側へ抜け、静かに消えていきます。</p>
           </fieldset>
 
-          <div class="slider-group">
-            <label for="strength"><span>WAVE STRENGTH / 波の強さ</span><output id="strengthValue">72</output></label>
-            <input id="strength" type="range" min="20" max="100" value="72" />
-          </div>
-          <div class="slider-group">
-            <label for="size"><span>SOURCE SIZE / 波源サイズ</span><output id="sizeValue">18</output></label>
-            <input id="size" type="range" min="6" max="36" value="18" />
+          <div class="slider-group wave-size-control">
+            <label for="waveSize"><span>WAVE SIZE / 波の大きさ</span><output id="waveSizeValue">50 / 10</output></label>
+            <input id="waveSize" type="range" min="0" max="6" step="1" value="3" aria-valuetext="WaveStrength 50、SourceSize 10" />
+            <div class="preset-scale" aria-hidden="true"><span>小</span><i></i><i></i><i></i><i></i><i></i><span>大</span></div>
+            <p class="control-note">強さと波源サイズを7段階で調整します。</p>
           </div>
 
           <div class="actions">
@@ -77,6 +75,6 @@
         <p>RIPPLE LAB / 2026</p>
       </footer>
     </main>
-    <script type="module" src="app.js?v=5"></script>
+    <script type="module" src="app.js?v=8"></script>
   </body>
 </html>

@@ -18,6 +18,15 @@ let boundary = 'open';
 let paused = false;
 let interacted = false;
 const pointers = new Map();
+const wavePresets = [
+  { strength: 20, size: 4 },
+  { strength: 30, size: 6 },
+  { strength: 40, size: 8 },
+  { strength: 50, size: 10 },
+  { strength: 60, size: 12 },
+  { strength: 70, size: 14 },
+  { strength: 80, size: 16 },
+];
 
 function conserveVisibleVolume(field) {
   let sum = 0;
@@ -52,8 +61,9 @@ function disturb(clientX, clientY) {
   const localY = normalizedY * viewSize - .5;
   const x = localX + viewStart;
   const y = localY + viewStart;
-  const radius = Number(document.querySelector('#size').value) * viewSize / 600;
-  const strength = Number(document.querySelector('#strength').value) / 100;
+  const preset = wavePresets[Number(document.querySelector('#waveSize').value)];
+  const radius = preset.size * viewSize / 600;
+  const strength = preset.strength / 100;
   const reach = Math.ceil(radius * 2.5);
   const minX = Math.max(viewStart + 1, Math.floor(x - reach));
   const maxX = Math.min(viewEnd - 1, Math.ceil(x + reach));
@@ -227,11 +237,13 @@ document.querySelectorAll('input[name="boundary"]').forEach(input => input.addEv
   document.querySelector('#boundaryDescription').textContent = boundary === 'open' ? '波が外側へ抜け、静かに消えていきます。' : '波が壁で跳ね返り、干渉を繰り返します。';
 }));
 
-for (const id of ['strength', 'size']) {
-  const input = document.querySelector(`#${id}`);
-  const output = document.querySelector(`#${id}Value`);
-  input.addEventListener('input', () => output.value = input.value);
-}
+const waveSizeInput = document.querySelector('#waveSize');
+const waveSizeOutput = document.querySelector('#waveSizeValue');
+waveSizeInput.addEventListener('input', () => {
+  const preset = wavePresets[Number(waveSizeInput.value)];
+  waveSizeOutput.value = `${preset.strength} / ${preset.size}`;
+  waveSizeInput.setAttribute('aria-valuetext', `WaveStrength ${preset.strength}、SourceSize ${preset.size}`);
+});
 
 document.querySelector('#clearButton').addEventListener('click', () => {
   current.fill(0); previous.fill(0); next.fill(0);
