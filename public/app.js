@@ -176,19 +176,28 @@ function step() {
 
 function render() {
   const data = image.data;
+  // In REFLECT the cells outside the wall stay zero. Match step()'s zero-flux
+  // wall by treating a missing neighbour as the boundary cell itself, or the
+  // edge pixels would be shaded against zero and draw a bright/dark rim.
+  const reflect = boundary === 'reflect';
+  const last = viewSize - 1;
   for (let localY = 0; localY < viewSize; localY++) {
+    const up = reflect && localY === 0 ? 0 : -width;
+    const down = reflect && localY === last ? 0 : width;
     for (let localX = 0; localX < viewSize; localX++) {
+      const left = reflect && localX === 0 ? 0 : -1;
+      const right = reflect && localX === last ? 0 : 1;
       const x = localX + viewStart;
       const y = localY + viewStart;
       const i = y * width + x;
       const pixel = (localY * viewSize + localX) * 4;
       const h = current[i];
-      const dx = current[i + 1] - current[i - 1];
-      const dy = current[i + width] - current[i - width];
+      const dx = current[i + right] - current[i + left];
+      const dy = current[i + down] - current[i + up];
       // 9-point isotropic Laplacian. The 5-point cross stencil made small
       // ripples look square because it weights axes and diagonals differently.
-      const edges = current[i - 1] + current[i + 1] + current[i - width] + current[i + width];
-      const corners = current[i - width - 1] + current[i - width + 1] + current[i + width - 1] + current[i + width + 1];
+      const edges = current[i + left] + current[i + right] + current[i + up] + current[i + down];
+      const corners = current[i + up + left] + current[i + up + right] + current[i + down + left] + current[i + down + right];
       const laplacian = (4 * edges + corners - 20 * h) / 6;
       // Isotropic shading keeps a circular wave visually concentric. A fixed
       // directional light made one quadrant brighter and shifted the apparent centre.
