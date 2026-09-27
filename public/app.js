@@ -215,13 +215,24 @@ function render() {
   ctx.drawImage(simCanvas, 0, 0, canvas.width, canvas.height);
 }
 
+// Fixed timestep keeps wave speed independent of the display refresh rate:
+// slow frames run more steps, fast frames run fewer.
+const stepMs = 1000 / 120;
 let lastTime = 0;
+let accumulator = 0;
 function animate(time) {
+  // Cap the frame delta so returning to a background tab does not trigger a
+  // burst of catch-up steps.
+  const delta = Math.min(time - lastTime, 100);
+  // Update even while paused so resuming does not replay the paused interval.
+  lastTime = time;
   if (!paused) {
-    const iterations = time - lastTime > 24 ? 1 : 2;
-    for (let i = 0; i < iterations; i++) step();
-    lastTime = time;
-    needsRender = true;
+    accumulator += delta;
+    while (accumulator >= stepMs) {
+      step();
+      accumulator -= stepMs;
+      needsRender = true;
+    }
   }
   // While paused the field only changes on input, so skip redundant redraws.
   if (needsRender) {
