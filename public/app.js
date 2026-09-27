@@ -92,8 +92,12 @@ function disturb(clientX, clientY) {
   }
   // Enforce the discrete volume invariant exactly. Truncating the source near
   // an edge otherwise leaves a small DC component after every interaction.
-  conserveVisibleVolume(current);
-  conserveVisibleVolume(previous);
+  // OPEN has no volume invariant; shifting only the visible area there would
+  // leave a step at the sponge boundary that radiates spurious waves.
+  if (boundary === 'reflect') {
+    conserveVisibleVolume(current);
+    conserveVisibleVolume(previous);
+  }
   needsRender = true;
   document.querySelector('#xReadout').textContent = normalizedX.toFixed(3);
   document.querySelector('#yReadout').textContent = normalizedY.toFixed(3);
