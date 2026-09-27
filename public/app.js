@@ -17,6 +17,7 @@ let image = simCtx.createImageData(viewSize, viewSize);
 let boundary = 'open';
 let paused = false;
 let interacted = false;
+let needsRender = true;
 const pointers = new Map();
 const shiftRepeatInterval = 180;
 const wavePresets = [
@@ -50,6 +51,8 @@ function resize() {
   simCanvas.width = viewSize;
   simCanvas.height = viewSize;
   ctx.imageSmoothingEnabled = true;
+  // Resizing clears the canvas bitmap.
+  needsRender = true;
 }
 
 function disturb(clientX, clientY) {
@@ -65,7 +68,10 @@ function disturb(clientX, clientY) {
   const preset = wavePresets[Number(document.querySelector('#waveSize').value)];
   const radius = preset.size * viewSize / 600;
   const strength = preset.strength / 100;
-  const reach = Math.ceil(radius * 2.5);
+  // At 4 sigma the Ricker tail is ~0.2% of the peak, so the cutoff leaves no
+  // visible step. The cutoff is circular; a square one printed a square halo.
+  const reach = radius * 4;
+  const reach2 = reach * reach;
   const minX = Math.max(viewStart + 1, Math.floor(x - reach));
   const maxX = Math.min(viewEnd - 1, Math.ceil(x + reach));
   const minY = Math.max(viewStart + 1, Math.floor(y - reach));
@@ -75,6 +81,7 @@ function disturb(clientX, clientY) {
       const dx = px - x;
       const dy = py - y;
       const d2 = dx * dx + dy * dy;
+      if (d2 > reach2) continue;
       // A Ricker-like source has nearly zero net displacement. A positive-only
       // Gaussian would keep raising the mean water level in a closed basin.
       const normalized = d2 / (2 * radius * radius);
@@ -87,6 +94,7 @@ function disturb(clientX, clientY) {
   // an edge otherwise leaves a small DC component after every interaction.
   conserveVisibleVolume(current);
   conserveVisibleVolume(previous);
+  needsRender = true;
   document.querySelector('#xReadout').textContent = normalizedX.toFixed(3);
   document.querySelector('#yReadout').textContent = normalizedY.toFixed(3);
   if (!interacted) {
@@ -99,7 +107,7 @@ function step() {
   const waveCoefficient = .22;
   const courant = Math.sqrt(waveCoefficient);
   const radiationCoefficient = (courant - 1) / (courant + 1);
-  let energy = 0;
+  let amplitude = 0;
 
   if (boundary === 'reflect') {
     // Zero normal flux at the wall. A missing neighbour equals the boundary
@@ -115,7 +123,7 @@ function step() {
         const laplacian = current[left] + current[right] + current[up] + current[down] - 4 * current[i];
         const value = (2 * current[i] - (1 - wallLoss) * previous[i] + waveCoefficient * laplacian) / (1 + wallLoss);
         next[i] = Number.isFinite(value) && Math.abs(value) < 20 ? value : 0;
-        energy += Math.abs(next[i]);
+        amplitude += Math.abs(next[i]);
       }
     }
     // Remove floating-point drift in the zero-frequency mode on every step.
@@ -135,7 +143,7 @@ function step() {
         // Damping velocity rather than displacement reduces sponge reflections.
         const value = (2 * current[i] - (1 - sigma) * previous[i] + waveCoefficient * laplacian) / (1 + sigma);
         next[i] = Number.isFinite(value) && Math.abs(value) < 20 ? value : 0;
-        if (x >= viewStart && x <= viewEnd && y >= viewStart && y <= viewEnd) energy += Math.abs(next[i]);
+        if (x >= viewStart && x <= viewEnd && y >= viewStart && y <= viewEnd) amplitude += Math.abs(next[i]);
       }
     }
     // Sommerfeld radiation condition in its first-order discrete (Mur) form.
@@ -159,7 +167,7 @@ function step() {
     next[bottomRight] = (next[bottomRight - 1] + next[bottomRight - width]) * .5;
   }
   [previous, current, next] = [current, next, previous];
-  document.querySelector('#energyReadout').textContent = Math.min(9.999, energy / 500).toFixed(3);
+  document.querySelector('#amplitudeReadout').textContent = Math.min(9.999, amplitude / 500).toFixed(3);
 }
 
 function render() {
@@ -173,7 +181,11 @@ function render() {
       const h = current[i];
       const dx = current[i + 1] - current[i - 1];
       const dy = current[i + width] - current[i - width];
-      const laplacian = current[i - 1] + current[i + 1] + current[i - width] + current[i + width] - 4 * h;
+      // 9-point isotropic Laplacian. The 5-point cross stencil made small
+      // ripples look square because it weights axes and diagonals differently.
+      const edges = current[i - 1] + current[i + 1] + current[i - width] + current[i + width];
+      const corners = current[i - width - 1] + current[i - width + 1] + current[i + width - 1] + current[i + width + 1];
+      const laplacian = (4 * edges + corners - 20 * h) / 6;
       // Isotropic shading keeps a circular wave visually concentric. A fixed
       // directional light made one quadrant brighter and shifted the apparent centre.
       const light = Math.max(-1, Math.min(1, -laplacian * 2.8));
@@ -196,12 +208,19 @@ function animate(time) {
     const iterations = time - lastTime > 24 ? 1 : 2;
     for (let i = 0; i < iterations; i++) step();
     lastTime = time;
+    needsRender = true;
   }
-  render();
+  // While paused the field only changes on input, so skip redundant redraws.
+  if (needsRender) {
+    render();
+    needsRender = false;
+  }
   requestAnimationFrame(animate);
 }
 
 frame.addEventListener('pointerdown', (event) => {
+  // Primary button only: right/middle clicks should not create sources.
+  if (event.button !== 0) return;
   frame.setPointerCapture(event.pointerId);
   const pointer = {
     x: event.clientX,
@@ -242,6 +261,13 @@ function stopShiftRepeats() {
     pointer.repeatTimer = null;
   });
 }
+frame.addEventListener('contextmenu', (event) => event.preventDefault());
+canvas.addEventListener('keydown', (event) => {
+  if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
+  event.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  disturb(rect.left + rect.width / 2, rect.top + rect.height / 2);
+});
 frame.addEventListener('pointerup', release);
 frame.addEventListener('pointercancel', release);
 frame.addEventListener('lostpointercapture', release);
@@ -267,6 +293,7 @@ document.querySelectorAll('input[name="boundary"]').forEach(input => input.addEv
     conserveVisibleVolume(previous);
     conserveVisibleVolume(next);
   }
+  needsRender = true;
   document.querySelector('#boundaryDescription').textContent = boundary === 'open' ? '波が外側へ抜け、静かに消えていきます。' : '波が壁で跳ね返り、干渉を繰り返します。';
 }));
 
@@ -280,12 +307,13 @@ waveSizeInput.addEventListener('input', () => {
 
 document.querySelector('#clearButton').addEventListener('click', () => {
   current.fill(0); previous.fill(0); next.fill(0);
-  document.querySelector('#energyReadout').textContent = '0.000';
+  needsRender = true;
+  document.querySelector('#amplitudeReadout').textContent = '0.000';
 });
 document.querySelector('#pauseButton').addEventListener('click', (event) => {
   paused = !paused;
   event.currentTarget.querySelector('b').textContent = paused ? '再開する' : '一時停止';
-  event.currentTarget.querySelector('.pause-icon').style.display = paused ? 'none' : '';
+  event.currentTarget.classList.toggle('is-paused', paused);
   document.querySelector('#statusText').textContent = paused ? 'SIMULATION PAUSED' : 'SIMULATION ACTIVE';
 });
 

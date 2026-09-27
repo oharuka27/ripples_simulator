@@ -6,6 +6,9 @@
     <meta name="theme-color" content="#071820" />
     <meta name="description" content="水面をタップして波の重なりを観察できる、インタラクティブな波紋シミュレータ" />
     <title>Ripple Lab — 波紋シミュレータ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Noto+Sans+JP:wght@400;500;700&display=swap" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23b5654a'%3E%3Cellipse cx='12' cy='16' rx='5' ry='4.2'/%3E%3Ccircle cx='5.5' cy='10' r='2.2'/%3E%3Ccircle cx='9.5' cy='6' r='2.2'/%3E%3Ccircle cx='14.5' cy='6' r='2.2'/%3E%3Ccircle cx='18.5' cy='10' r='2.2'/%3E%3C/svg%3E" />
   </head>
@@ -28,11 +31,11 @@
 
         <div class="simulator-wrap">
           <div class="canvas-frame" id="canvasFrame">
-            <canvas id="waterCanvas" aria-label="クリックして波紋を作る水面シミュレーション"></canvas>
+            <canvas id="waterCanvas" tabindex="0" role="button" aria-label="クリック、またはEnterキーで波紋を作る水面シミュレーション"></canvas>
             <div class="canvas-hud" aria-hidden="true">
               <span>X <b id="xReadout">0.000</b></span>
               <span>Y <b id="yReadout">0.000</b></span>
-              <span>ENERGY <b id="energyReadout">0.000</b></span>
+              <span>AMPLITUDE <b id="amplitudeReadout">0.000</b></span>
             </div>
             <div class="corner-label" aria-hidden="true">WATER<br />SURFACE</div>
             <div class="tap-hint" id="tapHint" aria-hidden="true"><span></span> TOUCH THE SURFACE</div>
@@ -76,6 +79,6 @@
         <p>RIPPLE LAB / 2026</p>
       </footer>
     </main>
-    <script type="module" src="app.js?v=8"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
